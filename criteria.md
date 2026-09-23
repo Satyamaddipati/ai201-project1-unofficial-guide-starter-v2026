@@ -22,9 +22,15 @@ pipeline earns credit; *"80% seemed reasonable"* does not.
 For at least 4 of my 5 test questions, the retrieved chunks include one that
 contains the answer.
 
-**Why this target:**
-<!-- e.g. "One of my questions is about a topic only two documents mention, so
-     I expect that one to be hard." -->
+**Why this target:** My Kestrel Commons wait-time question is the one I expect
+to be hardest: `campus_life` has six dining halls, and their documents share
+almost identical sentence templates ("wait times… matches what I've seen,"
+"salad bar wilts after 1:30") with only the hall name and numbers changed.
+That boilerplate similarity could make the embedding for "Kestrel" sit close
+to "Pellew" or "Halden," so top-5 might pull in the right *shape* of chunk
+from the wrong hall. My other four questions (add/drop week, printing quota,
+parking permits, library hours) each come from a single document with no
+near-duplicate sibling, so I expect those to retrieve cleanly.
 
 ---
 
@@ -32,9 +38,16 @@ contains the answer.
 
 Every answer the system produces names at least one source document.
 
-**Why this target:**
-<!-- Why all five and not four? What about your setup makes that achievable —
-     or what would have to go wrong for it not to be? -->
+**Why this target:** This one I hold to 5 of 5, not 4 of 5, because it isn't
+really a retrieval-quality question — `generate.py`'s prompt template appends
+a `Source:` line by construction whenever the gate lets a question through, so
+it's a code guarantee rather than something the model can flake on. I watched
+it hold even under pressure: my Kestrel Commons question pulled back four
+other dining halls' near-identical documents alongside the two real Kestrel
+ones, and the answer still cited `dining_kestrel_commons.txt` specifically
+rather than any of the distractors. The only way an answer has zero sources is
+the gate refusing first — and a refusal isn't the "answer" this criterion is
+about, since criterion 3 covers refusals separately.
 
 ---
 
@@ -49,50 +62,52 @@ in at least 4 of 5 tries.
      what happened into your run log. Swap them for your own if you'd rather —
      just keep five of them, or the "4 of 5" above has nothing to be 4 of. -->
 
-**Why this target:**
-<!-- What did your distances look like when you set the cutoff in Milestone 4?
-     Was there a clean gap, or did the two groups overlap? -->
+**Why this target:** I'm keeping this at 4 of 5, not 5 of 5, because one of my
+five `OUT_OF_SCOPE` questions is "How do I write a for loop in Rust?" and my
+corpus isn't entirely unrelated to programming — it includes CS 210 and CS 340
+course documents. Before measuring anything, that felt like the one question
+where the embedding distance might land closer to my cutoff than the other
+four (a capital city, a diesel engine, a sports result, a drug dosage), so I
+didn't want to commit to a clean sweep in advance.
 
 ---
 
-## 4. Something about your chunks
+## 4. Chunks read as complete, self-contained thoughts
 
-<!-- YOU WRITE THIS ONE.
+At least 4 of 5 sampled chunks contain no sentence cut off at either edge, and
+each names its own topic (which hall, which course, which deadline) rather
+than leaning on whatever chunk came before or after it.
 
-     How would you know if your chunks were the right size? Name something
-     countable or observable.
-
-     Examples of the right shape — don't copy these, they should come from
-     what you actually saw in Milestone 3:
-       - "At least 4 of 5 sampled chunks read as a complete thought, with no
-          sentence cut in half at either end."
-       - "No chunk is shorter than 200 characters, since anything below that
-          in my corpus turned out to be a heading with no content under it." -->
-
-
-
-**Why this target:**
-
-
+**Why this target:** After switching to paragraph packing, I checked all 88
+chunk lengths — they run 178 to 549 characters, the same range as the raw
+documents, because campus_life files are already single-topic and packing
+rarely has more than one paragraph run to merge. The one place I'd expect a
+miss is a file like `housing_innisfree_hall.txt`, which packs four distinct
+facts (room layout, AC, laundry price, noise level) into a single
+519-character chunk. It's still self-contained — nothing is cut off — but
+it's busier than a single-fact chunk like `admin_printing_quota.txt`, so I'm
+not assuming a clean 5 of 5 before I've sampled more than five chunks.
 
 ---
 
-## 5. Your choice
+## 5. The source named is the source that actually backs the answer
 
-<!-- YOU WRITE THIS ONE TOO.
+For at least 4 of my 5 test questions, the source cited in the answer is a
+document whose text contains the specific fact quoted — not just any document
+that happened to be in the top-k results.
 
-     Pick something you actually care about getting right. It could be about
-     speed, about refusals, about a particular kind of question your corpus
-     handles badly, about source attribution being correct rather than merely
-     present — anything, as long as it names a number or an observable
-     outcome. -->
-
-
-
-**Why this target:**
-
-
-
+**Why this target:** Criterion 2 only checks that *some* source gets named;
+it says nothing about whether it's the right one, and campus_life makes that
+an easy thing to get wrong on purpose — six dining halls, six housing halls,
+all written from the same template with only the names and numbers swapped.
+I already watched this almost go sideways: my Kestrel Commons question pulled
+back `dining_halden_hall_followup.txt`, `dining_pellew_dining_hall_followup.txt`,
+and `dining_the_ridgeway_cafe_followup.txt` in its top-5 alongside the two real
+Kestrel documents, and the answer still correctly cited
+`dining_kestrel_commons.txt`. That's one question out of five confirmed, which
+is why I'm setting the target at 4 of 5 rather than assuming the other four —
+none of which have a near-duplicate sibling — will behave the same way under
+a test I haven't actually run on them yet.
 ---
 
 <!-- ─────────────────────────────────────────────────────────────────────────

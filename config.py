@@ -24,11 +24,17 @@ CORPUS = os.getenv("AI201_CORPUS", "campus_life")
 
 
 # ─── Chunking (Milestone 3) ──────────────────────────────────────────────────
-# These are deliberately plain, generic numbers. Milestone 3 is where you
-# replace them with numbers that fit the documents you actually read.
+# campus_life documents run 178-549 characters and are already split by hand
+# into single-topic files (e.g. housing_innisfree_hall_laundry.txt is its own
+# file, separate from the noise and overview files for the same hall). The
+# natural chunk unit here is "one file," so split_documents packs paragraphs
+# greedily up to CHUNK_SIZE instead of cutting a fixed character window.
 
-CHUNK_SIZE = 800        # characters per chunk
-CHUNK_OVERLAP = 120     # characters shared between neighbouring chunks
+CHUNK_SIZE = 600        # just above the longest real document (549) — a
+                        # safety cap for a stray multi-topic file, not a target
+CHUNK_OVERLAP = 0       # paragraph packing never cuts mid-paragraph, so there's
+                        # no seam for overlap to patch (fallback_split below
+                        # still uses this for its own fixed-window cutting)
 
 
 # ─── Retrieval (Milestone 4) ─────────────────────────────────────────────────

@@ -221,27 +221,77 @@ keeping visible.
 
 ## Run Log — Before
 
-<!-- Your five criteria, three runs each. `python run_eval.py --label before`
-     runs the questions, puts the OUT_OF_SCOPE ones through the gate, and
-     writes it all into results/ for you. Targets come from criteria.md; the
-     verdict column is your call.
-
-     Criterion 3 is measured in one deterministic pass rather than three, so
-     the same number goes in all three run columns. That's correct, not lazy.
-
-     Milestone 1. -->
+Source data: `results/run_2026-09-28_0050_before.md`, produced by
+`python run_eval.py --label before` (`run_eval.py::main` and
+`run_eval.py::check_out_of_scope`, no `scorer.py` yet, so I judged each
+answer by reading it against `expects` in `questions.py`).
 
 | Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
 |---|---|---|---|---|---|
-| 1. Retrieved chunk contains the answer | 4 of 5 |  |  |  |  |
-| 2. Every answer names a source | 5 of 5 |  |  |  |  |
-| 3. Gate stops out-of-corpus questions | 4 of 5 |  |  |  |  |
-| 4. | | | | | |
-| 5. | | | | | |
+| 1. Retrieved chunk contains the answer | 4 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 2. Every answer names a source | 5 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 3. Gate stops out-of-corpus questions | 4 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 4. Chunks read as complete, self-contained thoughts | 4 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 5. The source named is the source that actually backs the answer | 4 of 5 | 5/5 | 5/5 | 5/5 | MET |
 
-<!-- Underneath, paste the REAL output for each criterion from one of your
-     runs — the actual text your system produced, not a description of it.
-     Name the file and function that produced it. -->
+Criteria 3 and 4 show the same number in all three columns on purpose, and for
+the same underlying reason even though they're measured by different code.
+Criterion 3 is one deterministic pass of `store.py::search` against a fixed
+cutoff (`gate.py::check`) — nothing about asking three times changes a
+distance. Criterion 4 doesn't touch `run_eval.py` at all; `chunker.py`'s
+`split_documents` produces the same 88 chunks from the same 88 documents every
+time, so sampling them again wouldn't move the number either. Criteria 1, 2,
+and 5 depend on `generate.py::answer_from_chunks`, which is the one thing that
+actually varies run to run (uncached model calls), which is why those are the
+ones the instructions expect to move — mine just happened not to.
+
+**Criterion 1 — real output.** Retrieved chunk for "How much printing credit
+does a student get each semester?" (`store.py::search`, chunk from
+`chunker.py::split_documents`, source `admin_printing_quota.txt`):
+
+```
+On the printing quota
+
+Every student gets $30 of printing per semester, which is roughly 600 black-and-white pages. It does not roll over. Colour costs eight times as much per page, which people discover after printing one poster.
+```
+
+**Criterion 2 — real output.** Full answer, run 2, from
+`generate.py::answer_from_chunks`:
+
+```
+The wait time at Kestrel Commons is 20 to 25 minutes between 12:15 and 1:00. 
+
+Source: `dining_kestrel_commons.txt` (also mentioned in `dining_kestrel_commons_followup.txt`).
+```
+
+**Criterion 3 — real output.** From `run_eval.py::check_out_of_scope`
+(`gate.py::check`):
+
+```
+refused  (best distance 0.896)  How do I write a for loop in Rust?
+```
+
+**Criterion 4 — real output.** Chunk 1 of 5 sampled by `app.py chunks -n 5`
+(`chunker.py::split_documents`) — see the Sample Chunks section above for all
+five; one repeated here for this row's evidence:
+
+```
+On the add/drop deadline
+
+You can add a course through the end of the second week. Dropping is a longer window — through the end of week six — but a drop after week two shows as a W on your transcript. Nothing anywhere on the registrar's site says this plainly, and students find out from each other.
+```
+
+**Criterion 5 — real output.** This is the one I was actually worried about
+in `criteria.md`: the Kestrel Commons question retrieves four near-identical
+dining hall documents alongside the real one
+(`store.py::search`), yet `generate.py::answer_from_chunks` still names the
+correct one:
+
+```
+Sources retrieved: dining_halden_hall_followup.txt, dining_kestrel_commons.txt, dining_kestrel_commons_followup.txt, dining_pellew_dining_hall_followup.txt, dining_the_ridgeway_cafe_followup.txt
+
+Source: `dining_kestrel_commons.txt` (also mentioned in `dining_kestrel_commons_followup.txt`).
+```
 
 ## Verdicts
 

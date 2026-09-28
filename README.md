@@ -220,10 +220,31 @@ say "Kestrel Commons" once, in a sentence about how long it takes to walk
 there. That finding went into "What's Still Broken" because I noticed it in
 the actual output, not because either of us predicted it going in.
 
-<!-- ── Stretch features ─────────────────────────────────────────────────────
-     Doing one? Say so here BEFORE you start. A feature this README never
-     claims earns nothing.
-     ───────────────────────────────────────────────────────────────────────── -->
+## Stretch Feature (declared before building it)
+
+**Attempting: a second measured improvement — a second chunking strategy.**
+
+The Improvement section below covers hybrid search. As a second, independent
+change from the Milestone 4 menu, I'm going to index `campus_life` a second
+way: the same paragraph-packing algorithm from `chunker.py::split_documents`,
+but with `CHUNK_SIZE` dropped from 600 to 250, stored as a second Chroma
+variant (`small_chunks`) rather than replacing the existing index. At 600, the
+packer almost never actually splits anything, since no document in this
+corpus exceeds 549 characters — Milestone 3's whole finding was that one file
+already equals one chunk here. At 250, that stops being true: multi-paragraph
+files like `housing_innisfree_hall.txt` (519 characters, four separate facts)
+will actually get cut into two or more pieces.
+
+This is meant to test two things Diagnoses and Verdicts already flagged: (1)
+whether smaller, single-fact chunks make criterion 4 (self-contained chunks)
+even cleaner, since the "busiest" chunk I found — `housing_innisfree_hall.txt`
+— is exactly the kind of file a 250-character cap would split apart, and (2)
+whether that same splitting risks cutting a fact's sentence in half across a
+chunk boundary, which would hurt criterion 1 instead. I'm running this with
+`RETRIEVAL_MODE` left at `"semantic"` (not combined with hybrid search) so
+chunk size is the only variable that changed from the original before-run —
+a third, independent comparison against `results/run_2026-09-28_0050_before.md`,
+not a combination with the hybrid-search after-run.
 
 ---
 

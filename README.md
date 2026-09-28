@@ -206,6 +206,22 @@ why," and I kept my original wrong guess in `criteria.md` rather than editing
 it, since the gap between what I expected and what I measured was worth
 keeping visible.
 
+**3.** For unit 2's improvement, before writing any code I asked it to predict
+whether adding BM25 hybrid search would actually move my numbers, given that
+my before-run already scored 5/5 on every criterion. It reasoned that Kestrel
+Commons' real document was already the single closest semantic match by a
+wide margin (0.191, versus 0.33+ for the nearest distractor), so re-ranking
+within an already-correct top-5 had no wrong answer to fix — the prediction
+was "probably no measurable change, but expect the *set* of distractors to
+shift." That's exactly what happened when I ran it: identical verdicts on
+every criterion, but a different distractor mix. What I hadn't predicted, and
+Claude hadn't either until we looked at the actual retrieved sources, was
+*which* distractor would show up — `transit_walking.txt`, pulled in only
+because it names "Kestrel Commons" once in an unrelated sentence about walking
+times. I added that specific finding to "What's Still Broken" myself, since it
+came from reading the real output, not from anything either of us predicted
+going in.
+
 <!-- ── Stretch features ─────────────────────────────────────────────────────
      Doing one? Say so here BEFORE you start. A feature this README never
      claims earns nothing.
@@ -315,68 +331,152 @@ point to.
 
 ## Diagnoses
 
-<!-- For each miss: which stage caused it, and how. The stage alone isn't
-     enough — you need the mechanism.
+I missed nothing. All five criteria came out MET on all three runs — no
+question failed, no source was misattributed, no out-of-scope question got
+through. There's no failure to trace to a pipeline stage, so there's nothing
+to diagnose in the usual sense.
 
-     Not a diagnosis: "Question 3 didn't work."
-     A diagnosis:     "Question 3 asks about laundry costs. The answer is in
-                       one sentence that got split across two chunks, so
-                       neither chunk on its own contains it."
+That's a result worth being suspicious of, not proud of. A system that clears
+every criterion on the first try usually means the criteria were safe, not
+that the system is excellent, so instead of stopping there I checked *how
+hard* each criterion had actually been stress-tested rather than just whether
+it passed.
 
-     The five stages: loading → chunking → embedding → retrieval → generation.
+The gap I found: criteria 1 and 5 both exist because of one specific risk —
+`campus_life` has six dining-hall documents and six housing-hall documents
+written from the same template, so embedding similarity between "Kestrel" and
+"Pellew" (say) could plausibly retrieve the wrong hall, or the model could cite
+the wrong one even when the right chunk is present. But only **1 of my 5
+questions** (Kestrel Commons) actually has a near-duplicate sibling in the
+corpus. The other four (add/drop deadline, printing quota, parking permits,
+library hours) are each the *only* document about their topic, so getting them
+right is close to automatic — there's no distractor for retrieval or
+generation to get confused by. A target that's only stress-tested by one
+question out of five isn't really tested at 4-of-5 confidence; it's passed by
+default four-fifths of the time.
 
-     Look for a pattern. If three misses all ask about numbers, that's one
-     problem, not three.
-
-     Missed nothing? Say so, then say honestly whether your targets were set
-     low, and which one you'd tighten and to what.
-
-     Milestone 3. -->
+**What I'd tighten, and to what:** criterion 5 — "the source cited is the
+source that actually backs the answer" — from *"at least 4 of 5 test
+questions"* to *"at least 4 of 5 test questions, where at least 2 of the 5
+have a near-duplicate templated sibling document in the corpus."* That's a
+coverage requirement on the test *design*, not just a stricter number — it
+forces the test to actually exercise the mechanism the criterion exists to
+catch, instead of letting four easy questions carry one hard one to a passing
+average. I'm not making this change to `criteria.md` itself, since nothing
+about the criterion was *broken* — it was measurable exactly as written, I
+just designed a test suite that didn't stress it as hard as it could have. That
+belongs in "What I'd Do Differently" below, not as a revision.
 
 ## The Improvement
 
-**What I changed:**
+**What I changed:** Added hybrid search. `store.py::search` now widens the
+semantic candidate pool to 15 and, when `config.RETRIEVAL_MODE == "hybrid"`
+(`AI201_RETRIEVAL_MODE=hybrid`), re-ranks it with `store.py::_hybrid_rerank` —
+a 50/50 blend of cosine similarity and BM25 keyword overlap
+(`rank-bm25`, already in `requirements.txt`) — before slicing to `top_k`. The
+`distance` field on each `Result` stays the real cosine distance regardless of
+mode, so `gate.py::check`'s 0.6 cutoff means exactly what it always meant;
+hybrid mode only changes which chunks are in the running and in what order.
 
-**Why I picked it:**
-
-<!-- Connect it to a specific diagnosis above in one sentence. If you can't,
-     you picked a fix because it sounded impressive. -->
+**Why I picked it:** It's a direct test of the mechanism named in Diagnoses.
+`campus_life` has six dining-hall and six housing-hall documents written from
+one template, so a question about "Kestrel Commons" risks having its exact
+name diluted by boilerplate phrasing ("matches what I've seen," "the salad bar
+wilts") shared with Halden, Pellew, and Ridgeway. BM25 is specifically good at
+exact-token matches a semantic embedding blurs together, which is the
+opposite failure mode from semantic search's strength — so combining them
+should help precisely where the near-duplicate-template risk lives, without
+giving up anything semantic search already does well.
 
 ### Run Log — After
 
-<!-- Same format, same five criteria, three runs each.
-     `python run_eval.py --label after` -->
+Source data: `results/run_2026-09-28_0107_after.md`, produced by
+`AI201_RETRIEVAL_MODE=hybrid python run_eval.py --label after`.
 
 | Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
 |---|---|---|---|---|---|
-| 1. Retrieved chunk contains the answer | 4 of 5 |  |  |  |  |
-| 2. Every answer names a source | 5 of 5 |  |  |  |  |
-| 3. Gate stops out-of-corpus questions | 4 of 5 |  |  |  |  |
-| 4. | | | | | |
-| 5. | | | | | |
+| 1. Retrieved chunk contains the answer | 4 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 2. Every answer names a source | 5 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 3. Gate stops out-of-corpus questions | 4 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 4. Chunks read as complete, self-contained thoughts | 4 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 5. Source named actually backs the answer | 4 of 5 | 5/5 | 5/5 | 5/5 | MET |
 
-**Did it help?**
+Identical verdicts to Run Log — Before, question for question. But the
+retrieval sets underneath weren't identical — hybrid re-ranking measurably
+changed which distractors showed up. For the Kestrel Commons question:
 
-<!-- Say plainly whether it did, and how you know. If it made things worse,
-     say that — a change that backfired, honestly reported, earns full credit
-     and is more interesting than one that worked. What matters is that you can
-     tell.
+```
+Before: dining_halden_hall_followup.txt, dining_kestrel_commons.txt, dining_kestrel_commons_followup.txt, dining_pellew_dining_hall_followup.txt, dining_the_ridgeway_cafe_followup.txt
 
-     Milestone 4. -->
+After:  dining_kestrel_commons.txt, dining_kestrel_commons_followup.txt, dining_the_ridgeway_cafe_followup.txt, dining_verrill_street_grill_followup.txt, transit_walking.txt
+```
+
+(`store.py::search` → `store.py::_hybrid_rerank`.) `transit_walking.txt` is a
+genuinely interesting entrant — it contains the literal phrase "Morrow House
+to Kestrel Commons: 7 minutes," so BM25 rewarded it for naming "Kestrel
+Commons" exactly, even though the document is about walking times and answers
+nothing about wait times. BM25 doesn't know the difference between a document
+*about* something and a document that just *names* it in passing.
+
+**Did it help?** No — not on this test suite, and I can say that precisely
+rather than vaguely. Every criterion stayed at exactly the same score, run for
+run, before and after (see the two tables above). The two real Kestrel Commons
+documents never left the semantic top-5 in the first place (Kestrel's own
+document was always the single closest match, distance 0.191, the largest
+margin of any of my five questions), so there was no wrong answer for
+re-ranking to fix, and no headroom for it to show a gain. What it did do was
+swap out *which* distractors ride along in the context window — sometimes for
+a worse one (`transit_walking.txt`, which name-drops the entity without
+answering the question) — with zero effect on the model's final citation
+either way.
+
+This lines up with the Diagnosis exactly: I picked hybrid search because
+criteria 1 and 5 exist to catch near-duplicate-template confusion, but only 1
+of my 5 questions actually has a near-duplicate sibling, and that one question
+was already comfortably correct under semantic-only search. The fix is
+real and the reasoning for it holds, but my test suite doesn't contain a
+question hard enough to need it — which is the same gap Diagnoses already
+named, from a different angle.
 
 ## What's Still Broken
 
-<!-- For each criterion still missed after your fix: what you'd do about it,
-     and why you stopped where you did.
+No criterion is missed, before or after the fix — but "nothing missed" isn't
+the same as "nothing left," and two real gaps remain:
 
-     "I ran out of time" is fine if it's true. Pretending nothing is left is
-     not.
+1. **My test suite still under-stresses criteria 1 and 5.** Only 1 of my 5
+   questions has a near-duplicate templated sibling in the corpus, so a clean
+   5/5 doesn't prove the system handles that risk reliably — it proves it
+   handles it once. I'd fix this by adding 2 more `QUESTIONS`, one about a
+   different dining hall and one about a different housing hall, specifically
+   chosen because they have near-identical sibling documents, and re-running
+   both retrieval modes against the expanded set.
 
-     Milestone 5. -->
+2. **The hybrid re-ranker can't tell "about X" from "mentions X."**
+   `transit_walking.txt` entered the Kestrel Commons top-5 under hybrid mode
+   purely because it names "Kestrel Commons" once, in a sentence that isn't
+   about wait times at all. It never displaced the right answer in my runs,
+   but a larger corpus with more incidental name-drops could let a
+   passing-mention chunk crowd out the real one. I'd address this by requiring
+   a minimum semantic similarity floor before BM25 gets a vote (so a document
+   has to already be somewhat relevant in meaning, not just contain the right
+   word), rather than the flat 50/50 blend I used here.
+
+I stopped here because both of these are about making the *test* harder, not
+because I found a live failure — I ran out of scope for this unit, not out of
+ideas, and this file being real evidence: my before and after run logs, plus
+this write-up naming both gaps, is a complete report of where I stopped.
 
 ## What I'd Do Differently
 
-<!-- Knowing what you know now — which of your five criteria would you write
-     differently, and why?
-
-     Milestone 5. -->
+**Criterion 5's target itself was fine; my test design around it wasn't.**
+Knowing what I know now, I'd write the QUESTIONS *selection process* into
+`criteria.md` alongside the number — something like "at least 2 of the 5 test
+questions must have a near-duplicate templated sibling document" — so that
+picking five topically-diverse-but-individually-easy questions can't quietly
+satisfy a criterion that exists to catch confusion between similar documents.
+The lesson from this whole unit wasn't "my system is broken," it was "a target
+is only as good as the questions you test it with," and that's a property of
+`questions.py`, not of `criteria.md`'s numbers — I'd have caught it earlier if
+I'd asked myself in Milestone 2 *which* of my five questions was doing the
+work of stress-testing each criterion, instead of just picking five specific,
+answerable facts and moving on.

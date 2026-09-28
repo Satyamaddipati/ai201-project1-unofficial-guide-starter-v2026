@@ -80,7 +80,9 @@ def fallback_split(
     return chunks
 
 
-def split_documents(documents: list[Document]) -> list[Chunk]:
+def split_documents(
+    documents: list[Document], chunk_size: int | None = None
+) -> list[Chunk]:
     """
     Split documents into chunks, tuned for campus_life.
 
@@ -88,12 +90,14 @@ def split_documents(documents: list[Document]) -> list[Chunk]:
     laundry situation and its noise situation live in separate files, not
     separate paragraphs of one file). So instead of cutting a fixed character
     window through the middle of a sentence, this packs whole paragraphs
-    together, greedily, up to CHUNK_SIZE — and only starts a new chunk when
-    the next paragraph would push it over. On this corpus that means most
-    files stay exactly one chunk, since they're already short; the packing
-    only kicks in as a safety net if a document has more than one topic in it.
+    together, greedily, up to `chunk_size` — and only starts a new chunk when
+    the next paragraph would push it over. At the default `CHUNK_SIZE` (600),
+    that means most files stay exactly one chunk, since they're already short;
+    the packing only kicks in as a safety net if a document has more than one
+    topic in it. Unit 2's stretch feature calls this with a smaller
+    `chunk_size` to force real splits and see what that does to the criteria.
     """
-    chunk_size = config.CHUNK_SIZE
+    chunk_size = chunk_size or config.CHUNK_SIZE
 
     chunks: list[Chunk] = []
     for doc in documents:

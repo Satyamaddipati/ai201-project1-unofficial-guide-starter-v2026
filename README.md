@@ -295,22 +295,23 @@ Source: `dining_kestrel_commons.txt` (also mentioned in `dining_kestrel_commons_
 
 ## Verdicts
 
-<!-- MET or MISSED for each of the five, against the target you wrote last
-     unit — not a new one. Plus a sentence on how you decided. That sentence
-     matters most where it was close.
-
-     If your target said 4 of 5 and your runs came out 4, 3, 4, that's a MISS.
-     The target has to hold, not show up occasionally.
-
-     Milestone 2. -->
-
 | # | Criterion | Verdict | How I decided |
 |---|---|---|---|
-| 1 |  |  |  |
-| 2 |  |  |  |
-| 3 |  |  |  |
-| 4 |  |  |  |
-| 5 |  |  |  |
+| 1 | Retrieved chunk contains the answer (target: 4 of 5) | MET | I didn't just trust the generated answer — for each question I checked the actual "Sources retrieved" list against the document I know holds the fact. The correct source was in the top-5 for all 5 questions, and since retrieval is deterministic that held for all 3 runs, not just one. |
+| 2 | Every answer names a source (target: 5 of 5) | MET | I read all 15 generated answers (5 questions × 3 runs) as literal text and every one carried an explicit source citation. The target was already all five, so there was no room to round up — it either held for all 15 or it didn't, and it did. |
+| 3 | Gate stops out-of-corpus questions (target: 4 of 5) | MET | One deterministic pass of the 5 `OUT_OF_SCOPE` questions through the gate: all 5 refused, with best distances (0.825–0.934) sitting well clear of the 0.6 cutoff. Not a close call in either direction. |
+| 4 | Chunks read as complete, self-contained thoughts (target: 4 of 5) | MET | I actually applied the "could someone answer using only this" test to all 5 sampled chunks instead of skimming them. The `dining_pellew_dining_hall_followup.txt` chunk was the closest call — it frames itself as a reply to something unstated ("matches what I've seen") — but it still names the hall and states the number outright, so it passes on its own. All 5 held. |
+| 5 | Source named is the source that actually backs the answer (target: 4 of 5) | MET | For every run I checked whether the *cited* document's text actually contains the quoted fact, not just whether some source was named. The Kestrel Commons question was the real test, since 4 near-duplicate dining-hall documents sat in the same top-5 results — the model named the correct one in all 3 runs. |
+
+None of these turned out to be broken — each was measurable exactly as written
+in `criteria.md` (a fixed document to check against, a literal string to look
+for, a distance to compare, a five-chunk sample, a source-to-text match), so
+I'm not revising any of them this unit. If something had come back
+inconsistent in a way I couldn't pin down to a real cause — e.g. if "contains
+the answer" had meant something different to me on two different reads — that
+would be a measurement problem worth rewriting the criterion over. That's not
+what happened here; every number came out the same way for a reason I could
+point to.
 
 ## Diagnoses
 

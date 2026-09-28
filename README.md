@@ -504,3 +504,103 @@ have caught this back in Milestone 2 if I'd asked myself which of my five
 questions was actually doing the work of stress-testing each criterion,
 instead of picking five specific, easily-answerable facts and calling it
 done.
+
+## Stretch Feature: A Second Improvement
+
+Declared above, before building it: a second chunking strategy, run
+independently of hybrid search (`RETRIEVAL_MODE` stayed `"semantic"`), as its
+own index variant (`small_chunks`) so it doesn't touch the main index.
+
+**What I changed:** `chunker.py::split_documents` now takes an optional
+`chunk_size` argument. I built a second index of `campus_life` with it set to
+250 instead of the usual 600, using `store.py::build_index(..., variant="small_chunks")`.
+88 documents produced 171 chunks this time instead of 88 — real splits are
+actually happening, unlike at 600.
+
+**Why I picked it:** Straight off the Milestone 4 menu ("a second chunking
+strategy... different size, different overlap, or split on paragraphs instead
+of a character count") and tied to two things already on the record. Criterion
+4's write-up flagged `housing_innisfree_hall.txt` as the busiest chunk I'd
+seen, four facts packed into one 519-character piece — a smaller cap should
+split facts like that apart. Criterion 1's write-up worried about near-duplicate
+templates diluting retrieval — smaller chunks could cut either way there, by
+isolating a distinguishing detail or by cutting a fact's sentence in half.
+
+### Run Log — Second Improvement
+
+Source data: `results/run_2026-09-28_0152_after2.md`, produced by
+`python run_eval.py --label after2 --variant small_chunks` (semantic
+retrieval, `CHUNK_SIZE=250`).
+
+| Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
+|---|---|---|---|---|---|
+| 1. Retrieved chunk contains the answer | 4 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 2. Every answer names a source | 5 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 3. Gate stops out-of-corpus questions | 4 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 4. Chunks read as complete, self-contained thoughts | 4 of 5 | 1/5 | 1/5 | 1/5 | **MISSED** |
+| 5. Source named actually backs the answer | 4 of 5 | 5/5 | 5/5 | 5/5 | MET |
+
+Criteria 1, 2, 3, and 5 held at the same scores as both earlier runs. Criterion
+4 didn't. I sampled 5 chunks from this variant with the same stride method as
+Milestone 3 (`app.py chunks`'s own sampling logic) and got this:
+
+```
+Chunk 1 | admin_add_drop_deadline.txt#0 (24 chars)
+On the add/drop deadline
+
+Chunk 2 | course_biol_160_workload.txt#1 (104 chars)
+It's front-loaded — the first month is heavier than the rest, partly because you're learning the format.
+
+Chunk 3 | course_stat_150.txt#0 (27 chars)
+STAT 150 Applied Statistics
+
+Chunk 4 | dining_verrill_street_grill.txt#0 (20 chars)
+Verrill Street Grill
+
+Chunk 5 | housing_morrow_house.txt#1 (175 chars)
+The good: cheapest housing tier by about $900 a year, and the singles are real singles.
+
+The bad: known damp problem on the ground floor; two rooms were taken offline in 2024.
+```
+
+(`chunker.py::split_documents`.) Three of these five are a document's title
+and nothing else — no one could answer any question with "On the add/drop
+deadline" alone. Chunk 5 has real content but never says "Morrow House"
+anywhere in its own text. Only chunk 2 comes close to naming its subject, and
+even that one just says "the format" without saying which course. On a fair
+read, at most 1 of 5 passes. That's a clean **MISS** against the 4-of-5
+target, not a close call.
+
+**Diagnosis of the miss.** Stage: chunking, `chunker.py::split_documents`.
+Mechanism: the packer starts each document's chunk with its title line
+(`current = paragraphs[0]`), then only appends the next paragraph if the
+combined length stays under `chunk_size`. At 600, a title plus its first
+paragraph almost always fits, so they merge and the title carries context into
+the chunk that follows it. At 250, they usually don't fit together — most
+first paragraphs in this corpus run 150-300 characters on their own — so the
+packer closes the title out as its own one-line chunk before any real content
+joins it. That produces a permanent, contentless fragment for nearly every
+multi-paragraph document, which is exactly what happened to 3 of my 5 sampled
+chunks.
+
+Interestingly, this didn't break criteria 1, 2, 3, or 5 on my actual five
+questions, and I can say why: `dining_kestrel_commons.txt` itself got cut into
+a useless title fragment and a body fragment that lost the hall's name, and
+neither made the final top-5 for the Kestrel Commons question. But
+`dining_kestrel_commons_followup.txt` — a different document that restates the
+same fact with the hall's name still attached — did, and the answer came from
+that instead. The same redundancy that made criterion 5 risky in Diagnoses
+(near-duplicate documents) is what quietly covered for this regression. A
+corpus without that redundancy would very likely have failed criterion 1 here
+too, not just criterion 4.
+
+**Did it help?** No — it made things worse, and I can point to exactly where.
+Comparing the two logs: `results/run_2026-09-28_0050_before.md` (`CHUNK_SIZE=600`)
+scored 5/5 on criterion 4 across all three runs; `results/run_2026-09-28_0152_after2.md`
+(`CHUNK_SIZE=250`) scored roughly 1/5 on the same criterion, same sampling
+method, same corpus. Criteria 1, 2, 3, and 5 stayed at 5/5 in both, but only
+because of a redundancy in the corpus that a harder question would have used
+up. My original hypothesis was half right — smaller chunks did isolate some
+facts more precisely (the library hours distance improved from 0.412 to
+0.219) — but the packing algorithm's title-handling flaw outweighs that gain
+badly enough that 600 is the better setting of the two I've actually measured.

@@ -22,15 +22,15 @@ pipeline earns credit; *"80% seemed reasonable"* does not.
 For at least 4 of my 5 test questions, the retrieved chunks include one that
 contains the answer.
 
-**Why this target:** My Kestrel Commons wait-time question is the one I expect
-to be hardest: `campus_life` has six dining halls, and their documents share
-almost identical sentence templates ("wait times… matches what I've seen,"
-"salad bar wilts after 1:30") with only the hall name and numbers changed.
-That boilerplate similarity could make the embedding for "Kestrel" sit close
-to "Pellew" or "Halden," so top-5 might pull in the right *shape* of chunk
-from the wrong hall. My other four questions (add/drop week, printing quota,
-parking permits, library hours) each come from a single document with no
-near-duplicate sibling, so I expect those to retrieve cleanly.
+**Why this target:** The Kestrel Commons question worries me most. `campus_life`
+has six dining halls and they're basically clones of each other — same
+sentence templates, same "matches what I've seen" phrasing, just the hall
+name and numbers swapped. If the embedding can't tell "Kestrel" apart from
+"Pellew" or "Halden" well enough, top-5 could hand back a chunk that looks
+right but is about the wrong building. The other four questions don't have
+that problem — add/drop week, printing quota, parking permits, and library
+hours each live in one document with nothing else like it in the corpus, so
+I'd be surprised if those didn't retrieve cleanly.
 
 ---
 
@@ -38,16 +38,16 @@ near-duplicate sibling, so I expect those to retrieve cleanly.
 
 Every answer the system produces names at least one source document.
 
-**Why this target:** This one I hold to 5 of 5, not 4 of 5, because it isn't
-really a retrieval-quality question — `generate.py`'s prompt template appends
-a `Source:` line by construction whenever the gate lets a question through, so
-it's a code guarantee rather than something the model can flake on. I watched
-it hold even under pressure: my Kestrel Commons question pulled back four
-other dining halls' near-identical documents alongside the two real Kestrel
-ones, and the answer still cited `dining_kestrel_commons.txt` specifically
-rather than any of the distractors. The only way an answer has zero sources is
-the gate refusing first — and a refusal isn't the "answer" this criterion is
-about, since criterion 3 covers refusals separately.
+**Why this target:** This is the one I set at 5 of 5 instead of 4. Naming a
+source isn't really about retrieval quality — `generate.py`'s prompt template
+appends a `Source:` line by construction any time the gate lets a question
+through, so it's baked into the code rather than something the model could
+forget to do. It held up even when I stress-tested it: the Kestrel Commons
+question came back with four other near-identical dining hall documents mixed
+in, and the answer still pointed at `dining_kestrel_commons.txt` specifically,
+not one of the distractors. About the only way an answer ends up with zero
+sources is the gate refusing before generation even runs, and that's
+criterion 3's territory, not this one.
 
 ---
 
@@ -62,13 +62,13 @@ in at least 4 of 5 tries.
      what happened into your run log. Swap them for your own if you'd rather —
      just keep five of them, or the "4 of 5" above has nothing to be 4 of. -->
 
-**Why this target:** I'm keeping this at 4 of 5, not 5 of 5, because one of my
-five `OUT_OF_SCOPE` questions is "How do I write a for loop in Rust?" and my
-corpus isn't entirely unrelated to programming — it includes CS 210 and CS 340
-course documents. Before measuring anything, that felt like the one question
-where the embedding distance might land closer to my cutoff than the other
-four (a capital city, a diesel engine, a sports result, a drug dosage), so I
-didn't want to commit to a clean sweep in advance.
+**Why this target:** I kept this one at 4 of 5. One of my `OUT_OF_SCOPE`
+questions asks how to write a for loop in Rust, and `campus_life` isn't a
+totally programming-free corpus — CS 210 and CS 340 are both in there. Before
+I'd measured anything, that felt like the question most likely to land close
+to the cutoff, closer than a question about a capital city, a diesel engine, a
+sports result, or a drug dosage. So I didn't want to bet on all five clearing
+it easily.
 
 ---
 
@@ -78,15 +78,15 @@ At least 4 of 5 sampled chunks contain no sentence cut off at either edge, and
 each names its own topic (which hall, which course, which deadline) rather
 than leaning on whatever chunk came before or after it.
 
-**Why this target:** After switching to paragraph packing, I checked all 88
-chunk lengths — they run 178 to 549 characters, the same range as the raw
-documents, because campus_life files are already single-topic and packing
-rarely has more than one paragraph run to merge. The one place I'd expect a
-miss is a file like `housing_innisfree_hall.txt`, which packs four distinct
-facts (room layout, AC, laundry price, noise level) into a single
-519-character chunk. It's still self-contained — nothing is cut off — but
-it's busier than a single-fact chunk like `admin_printing_quota.txt`, so I'm
-not assuming a clean 5 of 5 before I've sampled more than five chunks.
+**Why this target:** Once I switched to paragraph packing I checked the
+lengths on all 88 chunks — 178 to 549 characters, basically the same spread
+as the raw documents, since `campus_life` files are already single-topic and
+there's rarely more than one paragraph run for the packer to merge. If
+anything's going to trip this up it's a file like `housing_innisfree_hall.txt`,
+which crams four separate facts — layout, AC, laundry price, noise — into one
+519-character chunk. Nothing's cut off, so it's technically self-contained,
+but it's a busier read than a one-fact chunk like `admin_printing_quota.txt`.
+I don't want to assume 5 of 5 off a sample size of five.
 
 ---
 
@@ -96,18 +96,19 @@ For at least 4 of my 5 test questions, the source cited in the answer is a
 document whose text contains the specific fact quoted — not just any document
 that happened to be in the top-k results.
 
-**Why this target:** Criterion 2 only checks that *some* source gets named;
-it says nothing about whether it's the right one, and campus_life makes that
-an easy thing to get wrong on purpose — six dining halls, six housing halls,
-all written from the same template with only the names and numbers swapped.
-I already watched this almost go sideways: my Kestrel Commons question pulled
-back `dining_halden_hall_followup.txt`, `dining_pellew_dining_hall_followup.txt`,
-and `dining_the_ridgeway_cafe_followup.txt` in its top-5 alongside the two real
-Kestrel documents, and the answer still correctly cited
-`dining_kestrel_commons.txt`. That's one question out of five confirmed, which
-is why I'm setting the target at 4 of 5 rather than assuming the other four —
-none of which have a near-duplicate sibling — will behave the same way under
-a test I haven't actually run on them yet.
+**Why this target:** Criterion 2 only checks that some source gets named, not
+whether it's the correct one, and this corpus makes that distinction easy to
+get wrong on purpose — six dining halls and six housing halls, all copy-pasted
+off the same template with just the names and numbers changed. I already saw
+this nearly go wrong once: the Kestrel Commons question pulled
+`dining_halden_hall_followup.txt`, `dining_pellew_dining_hall_followup.txt`,
+and `dining_the_ridgeway_cafe_followup.txt` into its top-5 right alongside the
+two actual Kestrel documents, and the answer still landed on
+`dining_kestrel_commons.txt` correctly. That's one question confirmed out of
+five. I'm not ready to assume the other four, none of which have a
+near-duplicate twin, will hold up the same way under a test I haven't run on
+them.
+
 ---
 
 <!-- ─────────────────────────────────────────────────────────────────────────

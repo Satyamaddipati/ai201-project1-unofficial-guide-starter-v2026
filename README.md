@@ -21,53 +21,52 @@ Satya Bhargav Maddipati — corpus: `campus_life`
 
 ## What This Does
 
-This is a retrieval-augmented question answerer built on the `campus_life`
-corpus — 88 short, single-topic posts about student life at a university:
-dining hall wait times, housing quirks, course workloads, and the
-administrative rules that never get explained plainly (add/drop deadlines,
-parking permits, meal plan changes). Ask it something one of those posts
-actually answers — "how quickly do west lot parking permits sell out?" — and
-it retrieves the matching chunk, cites the source file, and answers from it.
-Ask it something outside the corpus and the relevance gate refuses rather than
-guessing.
+This is a retrieval-augmented question answerer for the `campus_life` corpus:
+88 short posts about student life at a university — dining hall wait times,
+housing quirks, course workloads, and the administrative rules nobody explains
+properly (add/drop deadlines, parking permits, meal plan changes). Ask
+something one of those posts covers, like how fast the west lot parking
+permits sell out, and it pulls the matching chunk, names the file it came
+from, and answers off that. Ask about something the corpus doesn't cover and
+it refuses instead of guessing.
 
 ## Chunking Strategy
 
 **Chunk size:** 600 characters (packed by paragraph, not a fixed window)
 **Overlap:** 0
 
-I ran the starter's `fallback_split` against all three corpora before touching
-anything: `campus_life` came out 88 documents → 88 chunks (nothing splits,
-shortest 178, longest 549), `city_guides` came out 14 → 51 (cutting straight
-through labelled sections), and `advice_threads` produced a 2-character chunk
-— the leftover tail of a document that didn't divide evenly into 800-character
-windows. That's not a bug, it's the fixed-window strategy doing exactly what
-it does.
+Before touching anything I ran the starter's `fallback_split` against all
+three corpora to see what it actually did. `campus_life` came out 88
+documents to 88 chunks — nothing splits, shortest chunk 178 characters,
+longest 549. `city_guides` went from 14 documents to 51, cutting straight
+through labelled sections. `advice_threads` produced a 2-character chunk, the
+leftover tail of a document that didn't divide evenly into 800-character
+windows. None of that is a bug. It's just what a fixed window does when it
+doesn't know where a sentence ends.
 
-For `campus_life`, the 1:1 result isn't an accident worth ignoring — I checked
-why. The corpus is already hand-split into single-topic files: a hall's
-laundry situation lives in its own `_laundry.txt`, its noise situation in its
-own `_noise.txt`, separate from the hall's overview file. So "one file, one
-complete thought" is already true of the source material, not something my
-chunker has to manufacture.
+The 1:1 result for `campus_life` seemed too clean to just accept, so I went
+and checked why. Turns out the corpus is already hand-split into single-topic
+files — a hall's laundry situation gets its own `_laundry.txt`, its noise
+situation its own `_noise.txt`, both separate from the hall's overview file.
+One file already equals one complete thought here. My chunker doesn't have to
+create that; it just has to not break it.
 
-That's why I replaced fixed-window slicing with paragraph packing: split each
-document on blank-line paragraph breaks, then greedily merge consecutive
-paragraphs into a chunk as long as the running total stays under
-`CHUNK_SIZE`. I set `CHUNK_SIZE` to 600 — just above the longest real document
-(549) — so it acts as a safety cap rather than a target: almost every file
-still becomes exactly one chunk, and the packing only kicks in if a future or
-edited document mixes more than one topic into a single file. I set
-`CHUNK_OVERLAP` to 0 because there's no fixed-window seam to patch — packing
-never cuts inside a paragraph, so there's nothing lost between adjacent
-chunks that overlap would need to restore.
+So I swapped fixed-window slicing for paragraph packing. Each document gets
+split on blank-line paragraph breaks, then consecutive paragraphs get merged
+back together as long as the running total stays under `CHUNK_SIZE`. I picked
+600 for that number — just above the longest real document at 549 — which
+makes it more of a safety cap than an actual target: almost every file still
+ends up as one chunk, and the packing logic only matters if some future
+document ends up covering two topics at once. Overlap is 0 because there's no
+seam here to patch in the first place; packing never cuts inside a paragraph,
+so there's nothing lost at a chunk boundary for overlap to restore.
 
-I did consider splitting every document into one chunk per paragraph instead
-(so, e.g., `housing_innisfree_hall.txt`'s "good," "bad," and laundry/noise
-sentences would each be their own chunk). I didn't, because those specific
-facts already have their own dedicated, better-written files elsewhere in the
-corpus — splitting the overview file further would just produce a worse
-duplicate of a chunk that already exists.
+I thought about going further and splitting every document down to one chunk
+per paragraph — `housing_innisfree_hall.txt`'s "good," "bad," and
+laundry/noise lines would each become their own chunk. Decided against it.
+Those exact facts already live in their own dedicated files elsewhere in the
+corpus, written better than a fragment of the overview post would be.
+Splitting further would just give me a worse copy of a chunk I already have.
 
 ## Sample Chunks
 
@@ -125,9 +124,9 @@ The bad: no air conditioning, which matters for the first three weeks of Septemb
 Laundry costs $1.75 wash, $1.75 dry, app-based. On noise: moderate; the building is L-shaped and the short wing is much quieter.
 ```
 
-Each of these stands alone: no sentence is cut off at either edge, and each
-names its own topic (course, deadline, dining hall, dorm) explicitly rather
-than relying on something said in a previous chunk.
+Each one stands alone. No sentence gets cut off at either edge, and each one
+names its own topic — the course, the deadline, the dining hall, the dorm —
+instead of relying on something said in a chunk before it.
 
 ## Sample Answer
 
@@ -165,62 +164,61 @@ I ran all five `QUESTIONS` and all five `OUT_OF_SCOPE` questions through
 | What is the recommended dosage of ibuprofen for a headache? | No | 0.844 |
 | How do I change the oil in a diesel engine? | No | 0.934 |
 
-The two groups don't overlap at all: every in-corpus question landed at 0.412
-or below, every out-of-scope question at 0.825 or above, leaving a clean gap
-between 0.412 and 0.825. The starter's default of 0.6 sits comfortably in the
-middle of that gap, so I left it alone rather than moving it — moving it would
-only have mattered if the groups had been close together or overlapping.
+The two groups don't overlap. Every in-corpus question landed at 0.412 or
+below, every out-of-scope question at 0.825 or above, so there's a clean gap
+between those two numbers. 0.6, the starter's default, sits right in the
+middle of it, so I left it where it was. Moving it would only have mattered if
+the two groups had been crowding each other.
 
-One thing that surprised me: I'd expected "How do I write a for loop in Rust?"
-to be the closest call, since `campus_life` includes real CS course documents
-(CS 210, CS 340). It actually came back as the *furthest* of all ten (0.896),
-closer to `course_hist_118_exams.txt` than to anything CS-related. My
-`campus_life` documents apparently don't use language close enough to a Rust
-tutorial for that to matter.
+One thing that actually surprised me: I figured "How do I write a for loop in
+Rust?" would be the closest call, since `campus_life` has real CS course
+documents in it (CS 210, CS 340). Instead it came back as the furthest away of
+all ten questions, at 0.896 — closer to `course_hist_118_exams.txt` than to
+anything CS-related. Whatever language a Rust tutorial uses, it apparently
+isn't close enough to how my documents talk about programming courses for that
+to matter.
 
 ## How I Used AI
 
-**1.** Before touching `chunker.py`, I asked Claude Code to check what the
-starter's fixed-window chunker actually did to each corpus, rather than just
-reading the docstring's claim about it. It ran `fallback_split` against all
-three corpora and reported exact numbers: `campus_life` 88 documents → 88
-chunks, `city_guides` 14 → 51 (cutting through labelled sections), and
-`advice_threads` producing a 2-character leftover chunk. That last number is
-what made me stop treating campus_life's 1:1 result as luck — I opened
-`housing_innisfree_hall.txt` next to its `_laundry` and `_noise` sibling files
-myself and confirmed the corpus is already hand-split into single-topic files.
-So I changed my plan from "just shrink the fixed window" to a paragraph-packing
-strategy with a size cap, since a fixed window was solving a problem this
-corpus didn't actually have.
+**1.** Before touching `chunker.py` I asked Claude Code to check what the
+starter's fixed-window chunker actually did to each corpus instead of just
+trusting the docstring's claim about it. It ran `fallback_split` against all
+three and reported real numbers: `campus_life` went 88 documents to 88 chunks,
+`city_guides` went 14 to 51 and cut straight through labelled sections, and
+`advice_threads` left a 2-character chunk dangling off the end of a document.
+That last one is what got me to stop treating campus_life's 1:1 result as
+luck — I went and opened `housing_innisfree_hall.txt` next to its `_laundry`
+and `_noise` sibling files myself and saw that the corpus is already
+hand-split into single-topic files. So the plan changed from "shrink the
+fixed window" to paragraph packing with a size cap, since a fixed window was
+solving a problem this particular corpus didn't have.
 
-**2.** For Milestone 4, I asked it to run my five `QUESTIONS` and all five
+**2.** For Milestone 4 I had it run my five `QUESTIONS` and all five
 `OUT_OF_SCOPE` questions through retrieval and print the best distance for
-each before I decided whether to move the default cutoff. I'd expected "How do
-I write a for loop in Rust?" to be the risky one, since the corpus has real CS
-course documents, and had written that expectation into `criteria.md` before
-measuring anything. The actual number came back at 0.896 — the *furthest* of
-all ten questions, not the closest — with a clean, non-overlapping gap between
-0.412 (worst in-corpus) and 0.825 (best out-of-scope). That changed my plan
-from "tune THRESHOLD" to "confirm the default is already fine and write down
-why," and I kept my original wrong guess in `criteria.md` rather than editing
-it, since the gap between what I expected and what I measured was worth
-keeping visible.
+each, before I touched the default cutoff. I'd already guessed, in
+`criteria.md`, that "How do I write a for loop in Rust?" would be the risky
+one since the corpus has real CS course material in it. The number came back
+at 0.896 — the furthest away of all ten questions, not the closest — with a
+clean gap between 0.412 (the worst in-corpus distance) and 0.825 (the best
+out-of-scope one). So the plan changed from "tune THRESHOLD" to "confirm the
+default's fine and explain why," and I left my wrong guess sitting in
+`criteria.md` rather than fixing it after the fact, since the gap between what
+I expected and what actually happened seemed worth keeping.
 
-**3.** For unit 2's improvement, before writing any code I asked it to predict
-whether adding BM25 hybrid search would actually move my numbers, given that
-my before-run already scored 5/5 on every criterion. It reasoned that Kestrel
-Commons' real document was already the single closest semantic match by a
-wide margin (0.191, versus 0.33+ for the nearest distractor), so re-ranking
-within an already-correct top-5 had no wrong answer to fix — the prediction
-was "probably no measurable change, but expect the *set* of distractors to
-shift." That's exactly what happened when I ran it: identical verdicts on
-every criterion, but a different distractor mix. What I hadn't predicted, and
-Claude hadn't either until we looked at the actual retrieved sources, was
-*which* distractor would show up — `transit_walking.txt`, pulled in only
-because it names "Kestrel Commons" once in an unrelated sentence about walking
-times. I added that specific finding to "What's Still Broken" myself, since it
-came from reading the real output, not from anything either of us predicted
-going in.
+**3.** For unit 2's improvement I asked it, before writing any code, whether
+adding BM25 hybrid search would actually change my numbers, given that the
+before-run had already scored 5/5 on everything. Its reasoning: the real
+Kestrel Commons document was already the closest semantic match by a wide
+margin (0.191 against 0.33+ for the next-closest distractor), so re-ranking a
+top-5 that already had the right answer in it had nothing to fix. Prediction
+was "probably no measurable change, but expect the distractors themselves to
+shift." That's basically what happened — same verdicts on every criterion, a
+different mix of distractors underneath. What neither of us saw coming until
+we actually looked at the retrieved sources was which distractor showed up:
+`transit_walking.txt`, pulled in for no better reason than that it happens to
+say "Kestrel Commons" once, in a sentence about how long it takes to walk
+there. That finding went into "What's Still Broken" because I noticed it in
+the actual output, not because either of us predicted it going in.
 
 <!-- ── Stretch features ─────────────────────────────────────────────────────
      Doing one? Say so here BEFORE you start. A feature this README never
@@ -250,16 +248,17 @@ answer by reading it against `expects` in `questions.py`).
 | 4. Chunks read as complete, self-contained thoughts | 4 of 5 | 5/5 | 5/5 | 5/5 | MET |
 | 5. The source named is the source that actually backs the answer | 4 of 5 | 5/5 | 5/5 | 5/5 | MET |
 
-Criteria 3 and 4 show the same number in all three columns on purpose, and for
-the same underlying reason even though they're measured by different code.
-Criterion 3 is one deterministic pass of `store.py::search` against a fixed
-cutoff (`gate.py::check`) — nothing about asking three times changes a
-distance. Criterion 4 doesn't touch `run_eval.py` at all; `chunker.py`'s
-`split_documents` produces the same 88 chunks from the same 88 documents every
-time, so sampling them again wouldn't move the number either. Criteria 1, 2,
-and 5 depend on `generate.py::answer_from_chunks`, which is the one thing that
-actually varies run to run (uncached model calls), which is why those are the
-ones the instructions expect to move — mine just happened not to.
+Criteria 3 and 4 show the same number in all three columns, and it's not
+laziness — they're both measured by code that doesn't change between runs,
+even though it's different code in each case. Criterion 3 is a single pass of
+`store.py::search` against a fixed cutoff in `gate.py::check`; asking the same
+question three times doesn't change a cosine distance. Criterion 4 never
+touches `run_eval.py` at all — `chunker.py`'s `split_documents` spits out the
+same 88 chunks from the same 88 documents no matter how many times you sample
+them. The only thing that actually moves between runs is
+`generate.py::answer_from_chunks`, since those are uncached model calls, which
+is why criteria 1, 2, and 5 are the ones the instructions expect to shift.
+Mine just didn't.
 
 **Criterion 1 — real output.** Retrieved chunk for "How much printing credit
 does a student get each semester?" (`store.py::search`, chunk from
@@ -313,80 +312,81 @@ Source: `dining_kestrel_commons.txt` (also mentioned in `dining_kestrel_commons_
 
 | # | Criterion | Verdict | How I decided |
 |---|---|---|---|
-| 1 | Retrieved chunk contains the answer (target: 4 of 5) | MET | I didn't just trust the generated answer — for each question I checked the actual "Sources retrieved" list against the document I know holds the fact. The correct source was in the top-5 for all 5 questions, and since retrieval is deterministic that held for all 3 runs, not just one. |
-| 2 | Every answer names a source (target: 5 of 5) | MET | I read all 15 generated answers (5 questions × 3 runs) as literal text and every one carried an explicit source citation. The target was already all five, so there was no room to round up — it either held for all 15 or it didn't, and it did. |
-| 3 | Gate stops out-of-corpus questions (target: 4 of 5) | MET | One deterministic pass of the 5 `OUT_OF_SCOPE` questions through the gate: all 5 refused, with best distances (0.825–0.934) sitting well clear of the 0.6 cutoff. Not a close call in either direction. |
-| 4 | Chunks read as complete, self-contained thoughts (target: 4 of 5) | MET | I actually applied the "could someone answer using only this" test to all 5 sampled chunks instead of skimming them. The `dining_pellew_dining_hall_followup.txt` chunk was the closest call — it frames itself as a reply to something unstated ("matches what I've seen") — but it still names the hall and states the number outright, so it passes on its own. All 5 held. |
-| 5 | Source named is the source that actually backs the answer (target: 4 of 5) | MET | For every run I checked whether the *cited* document's text actually contains the quoted fact, not just whether some source was named. The Kestrel Commons question was the real test, since 4 near-duplicate dining-hall documents sat in the same top-5 results — the model named the correct one in all 3 runs. |
+| 1 | Retrieved chunk contains the answer (target: 4 of 5) | MET | For each question I checked the actual "Sources retrieved" list against the document I already know holds the fact, rather than just trusting whatever the model wrote. The right source showed up in the top-5 every time, for all 5 questions, and since retrieval doesn't change between calls, that's true for all 3 runs too. |
+| 2 | Every answer names a source (target: 5 of 5) | MET | Read all 15 answers (5 questions × 3 runs) as plain text, and every one had an explicit citation in it. This target was already 5 of 5, so there's no rounding up to do — either all 15 had a source or they didn't. |
+| 3 | Gate stops out-of-corpus questions (target: 4 of 5) | MET | One pass of the 5 `OUT_OF_SCOPE` questions through the gate — it's deterministic, so one pass is all there is. All 5 got refused, distances ranging 0.825 to 0.934, nowhere near the 0.6 cutoff either way. |
+| 4 | Chunks read as complete, self-contained thoughts (target: 4 of 5) | MET | Actually ran the "could someone answer using only this" test against all 5 sampled chunks instead of eyeballing them. `dining_pellew_dining_hall_followup.txt` came closest to failing — it reads like a reply to something unstated ("matches what I've seen") — but it still names the hall and gives the number directly, so on its own it's enough. All 5 passed. |
+| 5 | Source named is the source that actually backs the answer (target: 4 of 5) | MET | Checked, for every run, whether the document that got cited actually contains the fact being quoted, not just whether a source was named at all. Kestrel Commons was the real test here, with 4 near-duplicate dining-hall documents sitting in the same top-5 — the model picked the right one all 3 times. |
 
-None of these turned out to be broken — each was measurable exactly as written
-in `criteria.md` (a fixed document to check against, a literal string to look
-for, a distance to compare, a five-chunk sample, a source-to-text match), so
-I'm not revising any of them this unit. If something had come back
-inconsistent in a way I couldn't pin down to a real cause — e.g. if "contains
-the answer" had meant something different to me on two different reads — that
-would be a measurement problem worth rewriting the criterion over. That's not
-what happened here; every number came out the same way for a reason I could
-point to.
+None of these were broken. Each one turned out to be measurable exactly as
+written in `criteria.md` — a fixed document to check against, a literal
+string to look for, a distance to compare, a five-chunk sample, a
+source-to-text match — so I'm not revising anything this unit. A measurement
+problem would look different: if "contains the answer" meant something
+different to me on two separate reads, or I scored the same question two
+different ways on two different days, that's when a criterion needs rewriting
+rather than just a fix. That's not what happened. Every number came out the
+same way for a reason I can actually point to.
 
 ## Diagnoses
 
-I missed nothing. All five criteria came out MET on all three runs — no
-question failed, no source was misattributed, no out-of-scope question got
-through. There's no failure to trace to a pipeline stage, so there's nothing
-to diagnose in the usual sense.
+Nothing was missed. All five criteria came out MET across all three runs — no
+question failed, no source got misattributed, no out-of-scope question snuck
+through. So there's no failure sitting in any of the five stages waiting to be
+traced, and nothing to diagnose in the normal sense of the word.
 
-That's a result worth being suspicious of, not proud of. A system that clears
-every criterion on the first try usually means the criteria were safe, not
-that the system is excellent, so instead of stopping there I checked *how
-hard* each criterion had actually been stress-tested rather than just whether
-it passed.
+I'm suspicious of that, not proud of it. Clearing every criterion on the first
+attempt usually just means the criteria were easy, not that the system is
+great, so rather than stop there I went back and looked at how hard each
+criterion had actually been tested — not whether it passed, but whether
+passing it meant anything.
 
-The gap I found: criteria 1 and 5 both exist because of one specific risk —
-`campus_life` has six dining-hall documents and six housing-hall documents
-written from the same template, so embedding similarity between "Kestrel" and
-"Pellew" (say) could plausibly retrieve the wrong hall, or the model could cite
-the wrong one even when the right chunk is present. But only **1 of my 5
-questions** (Kestrel Commons) actually has a near-duplicate sibling in the
-corpus. The other four (add/drop deadline, printing quota, parking permits,
-library hours) are each the *only* document about their topic, so getting them
-right is close to automatic — there's no distractor for retrieval or
-generation to get confused by. A target that's only stress-tested by one
-question out of five isn't really tested at 4-of-5 confidence; it's passed by
-default four-fifths of the time.
+Here's what I found: criteria 1 and 5 both exist because of one specific
+risk. `campus_life` has six dining-hall documents and six housing-hall
+documents built off the same template, so an embedding could plausibly
+confuse "Kestrel" for "Pellew," or the model could cite the wrong hall even
+with the right chunk sitting in front of it. Only one of my five questions —
+Kestrel Commons — actually has a near-duplicate sibling to run into that
+problem. The other four (add/drop deadline, printing quota, parking permits,
+library hours) are each the only document on their topic in the whole corpus,
+so there's nothing around to confuse retrieval or generation with — getting
+those right is close to automatic. A target that's only put to the test by one
+question in five isn't really running at 4-of-5 confidence. Four fifths of the
+time it passes by default, before the mechanism it exists to catch even shows
+up.
 
-**What I'd tighten, and to what:** criterion 5 — "the source cited is the
-source that actually backs the answer" — from *"at least 4 of 5 test
-questions"* to *"at least 4 of 5 test questions, where at least 2 of the 5
-have a near-duplicate templated sibling document in the corpus."* That's a
-coverage requirement on the test *design*, not just a stricter number — it
-forces the test to actually exercise the mechanism the criterion exists to
-catch, instead of letting four easy questions carry one hard one to a passing
-average. I'm not making this change to `criteria.md` itself, since nothing
-about the criterion was *broken* — it was measurable exactly as written, I
-just designed a test suite that didn't stress it as hard as it could have. That
-belongs in "What I'd Do Differently" below, not as a revision.
+**What I'd tighten, and to what:** criterion 5, the one about whether the
+cited source is the source that actually backs the answer. Instead of "at
+least 4 of 5 test questions," I'd write "at least 4 of 5 test questions, at
+least 2 of which have a near-duplicate templated sibling document in the
+corpus." That's a requirement on how the test questions get picked, not just a
+harder number, and it stops four easy questions from carrying one hard one to
+a passing average. I'm not writing this into `criteria.md` itself — nothing
+about the criterion was broken, it measured exactly what it said it would. I
+just picked a test suite that didn't push on it as hard as it could have, and
+that belongs under "What I'd Do Differently" below, not as a revision.
 
 ## The Improvement
 
-**What I changed:** Added hybrid search. `store.py::search` now widens the
-semantic candidate pool to 15 and, when `config.RETRIEVAL_MODE == "hybrid"`
-(`AI201_RETRIEVAL_MODE=hybrid`), re-ranks it with `store.py::_hybrid_rerank` —
-a 50/50 blend of cosine similarity and BM25 keyword overlap
-(`rank-bm25`, already in `requirements.txt`) — before slicing to `top_k`. The
-`distance` field on each `Result` stays the real cosine distance regardless of
-mode, so `gate.py::check`'s 0.6 cutoff means exactly what it always meant;
-hybrid mode only changes which chunks are in the running and in what order.
+**What I changed:** I added hybrid search. `store.py::search` now pulls a
+wider pool of 15 semantic candidates, and when `config.RETRIEVAL_MODE` is set
+to `"hybrid"` (via `AI201_RETRIEVAL_MODE=hybrid`), hands that pool to
+`store.py::_hybrid_rerank`, which blends cosine similarity with BM25 keyword
+overlap 50/50 (`rank-bm25` was already sitting in `requirements.txt`) before
+cutting it down to `top_k`. The distance on each `Result` is still the real
+cosine distance no matter which mode is on, so `gate.py::check`'s 0.6 cutoff
+hasn't changed meaning — hybrid mode only touches which chunks make the cut
+and what order they come back in.
 
-**Why I picked it:** It's a direct test of the mechanism named in Diagnoses.
-`campus_life` has six dining-hall and six housing-hall documents written from
-one template, so a question about "Kestrel Commons" risks having its exact
-name diluted by boilerplate phrasing ("matches what I've seen," "the salad bar
-wilts") shared with Halden, Pellew, and Ridgeway. BM25 is specifically good at
-exact-token matches a semantic embedding blurs together, which is the
-opposite failure mode from semantic search's strength — so combining them
-should help precisely where the near-duplicate-template risk lives, without
-giving up anything semantic search already does well.
+**Why I picked it:** This goes straight at the mechanism from Diagnoses.
+`campus_life` has six dining halls and six housing halls all written off one
+template, so a question about "Kestrel Commons" risks its exact name getting
+drowned out by boilerplate wording it shares with Halden, Pellew, and
+Ridgeway — "matches what I've seen," "the salad bar wilts," that kind of
+thing. BM25 is good at exactly the thing semantic search is weak at, exact
+token matches, so combining the two should help right where the
+near-duplicate-template risk actually lives, without costing anything
+semantic search already handles fine.
 
 ### Run Log — After
 
@@ -401,9 +401,9 @@ Source data: `results/run_2026-09-28_0107_after.md`, produced by
 | 4. Chunks read as complete, self-contained thoughts | 4 of 5 | 5/5 | 5/5 | 5/5 | MET |
 | 5. Source named actually backs the answer | 4 of 5 | 5/5 | 5/5 | 5/5 | MET |
 
-Identical verdicts to Run Log — Before, question for question. But the
-retrieval sets underneath weren't identical — hybrid re-ranking measurably
-changed which distractors showed up. For the Kestrel Commons question:
+The verdicts match Run Log — Before question for question, exactly. What's
+not identical is the retrieval underneath — hybrid re-ranking changed which
+distractors came back, and I can show it. Take the Kestrel Commons question:
 
 ```
 Before: dining_halden_hall_followup.txt, dining_kestrel_commons.txt, dining_kestrel_commons_followup.txt, dining_pellew_dining_hall_followup.txt, dining_the_ridgeway_cafe_followup.txt
@@ -411,72 +411,75 @@ Before: dining_halden_hall_followup.txt, dining_kestrel_commons.txt, dining_kest
 After:  dining_kestrel_commons.txt, dining_kestrel_commons_followup.txt, dining_the_ridgeway_cafe_followup.txt, dining_verrill_street_grill_followup.txt, transit_walking.txt
 ```
 
-(`store.py::search` → `store.py::_hybrid_rerank`.) `transit_walking.txt` is a
-genuinely interesting entrant — it contains the literal phrase "Morrow House
-to Kestrel Commons: 7 minutes," so BM25 rewarded it for naming "Kestrel
-Commons" exactly, even though the document is about walking times and answers
-nothing about wait times. BM25 doesn't know the difference between a document
-*about* something and a document that just *names* it in passing.
+(`store.py::search` into `store.py::_hybrid_rerank`.) `transit_walking.txt`
+is the interesting one here — it literally contains the sentence "Morrow
+House to Kestrel Commons: 7 minutes," so BM25 rewarded it for saying "Kestrel
+Commons" exactly right, never mind that the document has nothing to do with
+wait times and is entirely about how long it takes to walk somewhere. BM25
+has no concept of a document being *about* a thing versus just mentioning it
+in passing.
 
-**Did it help?** No — not on this test suite, and I can say that precisely
-rather than vaguely. Every criterion stayed at exactly the same score, run for
-run, before and after (see the two tables above). The two real Kestrel Commons
-documents never left the semantic top-5 in the first place (Kestrel's own
-document was always the single closest match, distance 0.191, the largest
-margin of any of my five questions), so there was no wrong answer for
-re-ranking to fix, and no headroom for it to show a gain. What it did do was
-swap out *which* distractors ride along in the context window — sometimes for
-a worse one (`transit_walking.txt`, which name-drops the entity without
-answering the question) — with zero effect on the model's final citation
-either way.
+**Did it help?** No, not on this test suite — and I mean that precisely, not
+as a shrug. Every criterion landed at the exact same score, run for run, both
+before and after (compare the two tables). The real Kestrel Commons documents
+were never in danger of leaving the semantic top-5 to begin with — Kestrel's
+own document sat at distance 0.191, the biggest margin of any of my five
+questions — so there wasn't a wrong answer sitting around for re-ranking to
+correct, and nothing for it to actually improve. All it changed was which
+distractors rode along for the ride, occasionally for a worse one
+(`transit_walking.txt` names the entity and answers nothing), with no effect
+at all on what the model ended up citing.
 
-This lines up with the Diagnosis exactly: I picked hybrid search because
-criteria 1 and 5 exist to catch near-duplicate-template confusion, but only 1
-of my 5 questions actually has a near-duplicate sibling, and that one question
-was already comfortably correct under semantic-only search. The fix is
-real and the reasoning for it holds, but my test suite doesn't contain a
-question hard enough to need it — which is the same gap Diagnoses already
-named, from a different angle.
+This lines up exactly with the Diagnosis. I picked hybrid search because
+criteria 1 and 5 exist to catch near-duplicate-template confusion, and only
+one of my five questions actually has a near-duplicate sibling — and that
+question was already handled fine under semantic-only search. The fix itself
+is sound and the reasoning behind it holds up. My test suite just doesn't
+have a question hard enough to actually need it, which is the same gap
+Diagnoses pointed at, seen from a different angle.
 
 ## What's Still Broken
 
-No criterion is missed, before or after the fix — but "nothing missed" isn't
-the same as "nothing left," and two real gaps remain:
+Nothing is missed, either before or after the fix. But "nothing missed" isn't
+the same thing as "nothing left" — two real gaps are still sitting here:
 
-1. **My test suite still under-stresses criteria 1 and 5.** Only 1 of my 5
-   questions has a near-duplicate templated sibling in the corpus, so a clean
-   5/5 doesn't prove the system handles that risk reliably — it proves it
-   handles it once. I'd fix this by adding 2 more `QUESTIONS`, one about a
-   different dining hall and one about a different housing hall, specifically
-   chosen because they have near-identical sibling documents, and re-running
-   both retrieval modes against the expanded set.
+1. **My test suite still doesn't push hard enough on criteria 1 and 5.** Only
+   one question out of five has a near-duplicate sibling in the corpus, so a
+   clean 5/5 doesn't prove the system handles that risk reliably — it proves
+   the system handled it once. I'd fix this by adding two more questions, one
+   about a different dining hall and one about a different housing hall,
+   picked specifically because each has a near-identical sibling document,
+   then running both retrieval modes against the bigger set.
 
-2. **The hybrid re-ranker can't tell "about X" from "mentions X."**
-   `transit_walking.txt` entered the Kestrel Commons top-5 under hybrid mode
-   purely because it names "Kestrel Commons" once, in a sentence that isn't
-   about wait times at all. It never displaced the right answer in my runs,
-   but a larger corpus with more incidental name-drops could let a
-   passing-mention chunk crowd out the real one. I'd address this by requiring
-   a minimum semantic similarity floor before BM25 gets a vote (so a document
-   has to already be somewhat relevant in meaning, not just contain the right
-   word), rather than the flat 50/50 blend I used here.
+2. **The hybrid re-ranker can't tell a document that's about something from
+   one that just mentions it.** `transit_walking.txt` got into the Kestrel
+   Commons top-5 under hybrid mode for no better reason than saying "Kestrel
+   Commons" once, in a sentence with nothing to do with wait times. It never
+   bumped the real answer out of my runs, but a bigger corpus with more
+   incidental name-drops could let something like that crowd out the actual
+   answer eventually. My fix would be a minimum semantic similarity floor
+   before BM25 gets any say at all — a document has to already be somewhat
+   relevant in meaning before keyword overlap can move it up, rather than the
+   flat 50/50 split I used here.
 
-I stopped here because both of these are about making the *test* harder, not
-because I found a live failure — I ran out of scope for this unit, not out of
-ideas, and this file being real evidence: my before and after run logs, plus
-this write-up naming both gaps, is a complete report of where I stopped.
+I stopped here because both of these are about making the test harder, not
+because I ran into a live failure. It's a scope stop, not an ideas stop — the
+before and after run logs plus this write-up are the actual record of where
+things stand, and I'd rather leave that record honest than pad it out with a
+fix for a problem I haven't actually hit yet.
 
 ## What I'd Do Differently
 
-**Criterion 5's target itself was fine; my test design around it wasn't.**
-Knowing what I know now, I'd write the QUESTIONS *selection process* into
-`criteria.md` alongside the number — something like "at least 2 of the 5 test
-questions must have a near-duplicate templated sibling document" — so that
-picking five topically-diverse-but-individually-easy questions can't quietly
-satisfy a criterion that exists to catch confusion between similar documents.
-The lesson from this whole unit wasn't "my system is broken," it was "a target
-is only as good as the questions you test it with," and that's a property of
-`questions.py`, not of `criteria.md`'s numbers — I'd have caught it earlier if
-I'd asked myself in Milestone 2 *which* of my five questions was doing the
-work of stress-testing each criterion, instead of just picking five specific,
-answerable facts and moving on.
+Criterion 5's number was fine. What wasn't fine was how I picked the
+questions meant to test it. Knowing what I know now, I'd write the selection
+rule into `criteria.md` right alongside the target — something like "at least
+2 of the 5 test questions have to have a near-duplicate templated sibling
+document" — so five topically different but individually easy questions can't
+quietly satisfy a criterion built to catch confusion between similar
+documents. The real lesson from this unit wasn't "my system is broken." It
+was that a target is only as good as the questions you point at it, and
+that's a property of `questions.py`, not of the numbers in `criteria.md`. I'd
+have caught this back in Milestone 2 if I'd asked myself which of my five
+questions was actually doing the work of stress-testing each criterion,
+instead of picking five specific, easily-answerable facts and calling it
+done.

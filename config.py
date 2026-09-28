@@ -51,6 +51,13 @@ TOP_K = 5               # how many chunks to pull back per question
 # Most corpora land somewhere between 0.45 and 0.75.
 THRESHOLD = 0.6
 
+# "semantic" is vector-only search. "hybrid" (unit 2's improvement) re-ranks
+# the same candidates by combining cosine similarity with BM25 keyword
+# overlap, so an exact name (e.g. "Kestrel") can outweigh the boilerplate
+# phrasing shared by near-duplicate documents — six dining halls and six
+# housing halls, all written from the same template. See store.py::search.
+RETRIEVAL_MODE = os.getenv("AI201_RETRIEVAL_MODE", "semantic")
+
 
 # ─── Models ──────────────────────────────────────────────────────────────────
 # Embeddings run on your own machine and cost no API quota.

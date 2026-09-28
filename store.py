@@ -18,6 +18,7 @@ rest of the project if they were wrong:
 """
 
 import os
+import re
 import shutil
 from dataclasses import dataclass
 
@@ -185,9 +186,14 @@ def search(
     variant: str = "default",
 ) -> list[Result]:
     """
-    Retrieve the chunks closest in meaning to a question.
+    Retrieve the chunks closest to a question.
 
-    Returns them nearest-first, each with its distance.
+    Semantic-only by default. When `config.RETRIEVAL_MODE == "hybrid"`
+    (unit 2's improvement), the same candidates get re-ranked by combining
+    cosine similarity with BM25 keyword overlap — see `_hybrid_rerank`. Either
+    way, `distance` on each Result stays the real cosine distance: hybrid mode
+    changes which chunks come back and in what order, not what the gate's 0.6
+    cutoff means.
     """
     top_k = top_k or config.TOP_K
     name = config.collection_name(corpus, variant)
@@ -199,9 +205,14 @@ def search(
             f"No index called '{name}'. Run `python app.py index` first."
         ) from exc
 
+    hybrid = config.RETRIEVAL_MODE == "hybrid"
+    # Widen the candidate pool before re-ranking, so BM25 gets a chance to pull
+    # up a chunk that semantic search alone ranked outside the final top_k.
+    n = max(top_k, 15) if hybrid else top_k
+
     raw = collection.query(
         query_embeddings=embed([question]),
-        n_results=min(top_k, collection.count()),
+        n_results=min(n, collection.count()),
     )
 
     results: list[Result] = []
@@ -217,7 +228,64 @@ def search(
                 produced_by=str(meta.get("produced_by", "unknown")),
             )
         )
-    return results
+
+    if hybrid:
+        results = _hybrid_rerank(question, results, corpus, variant)
+
+    return results[:top_k]
+
+
+def _tokenize(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", text.lower())
+
+
+_bm25_cache: dict[str, tuple] = {}
+
+
+def _bm25_for(corpus: str | None, variant: str):
+    """BM25 over every chunk in this corpus/variant, built once and cached."""
+    from rank_bm25 import BM25Okapi
+
+    name = config.collection_name(corpus, variant)
+    if name not in _bm25_cache:
+        collection = _client().get_collection(name)
+        raw = collection.get()
+        labels = [
+            f"{m.get('source', 'unknown')}#{m.get('index', 0)}"
+            for m in raw["metadatas"]
+        ]
+        bm25 = BM25Okapi([_tokenize(t) for t in raw["documents"]])
+        _bm25_cache[name] = (bm25, labels)
+    return _bm25_cache[name]
+
+
+def _hybrid_rerank(
+    question: str,
+    candidates: list[Result],
+    corpus: str | None,
+    variant: str,
+    alpha: float = 0.5,
+) -> list[Result]:
+    """
+    Re-rank `candidates` (already widened by `search`) by combining cosine
+    similarity with BM25 keyword overlap, alpha=0.5 weighting them evenly.
+
+    This corpus's known risk is exact names — "Kestrel", "Innisfree" — getting
+    diluted by boilerplate wording six near-identical dining-hall documents (or
+    six housing-hall ones) all share. BM25 is specifically good at exact-token
+    matches a semantic embedding blurs together.
+    """
+    bm25, labels = _bm25_for(corpus, variant)
+    scores = bm25.get_scores(_tokenize(question))
+    score_by_label = dict(zip(labels, scores))
+    max_score = max(scores) if len(scores) and max(scores) > 0 else 1.0
+
+    def hybrid_score(r: Result) -> float:
+        semantic = 1 - r.distance
+        keyword = score_by_label.get(r.label, 0.0) / max_score
+        return alpha * semantic + (1 - alpha) * keyword
+
+    return sorted(candidates, key=hybrid_score, reverse=True)
 
 
 def index_exists(corpus: str | None = None, variant: str = "default") -> bool:
